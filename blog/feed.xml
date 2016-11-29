@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Finagle blog</title>
+  <id>https://finagle.github.io/blog</id>
+  <link href="https://finagle.github.io/blog"/>
+  <link href="https://finagle.github.io/blog/blog/feed.xml" rel="self"/>
+  <updated>2016-11-28T16:00:00-08:00</updated>
+  <author>
+    <name>Blog Author</name>
+  </author>
+  <entry>
+    <title>Farewell, maven.twttr.com!</title>
+    <link rel="alternate" href="https://finagle.github.io/blog/2016/11/29/central-libthrift/"/>
+    <id>https://finagle.github.io/blog/2016/11/29/central-libthrift/</id>
+    <published>2016-11-28T16:00:00-08:00</published>
+    <updated>2016-11-29T15:26:59-08:00</updated>
+    <author>
+      <name>Article Author</name>
+    </author>
+    <content type="html">&lt;p&gt;Historically Finagle has depended on a forked org.apache.thrift libthrift
+version 0.5.x, which happens to not be published to the Central
+Repository. We have published the artifact to maven.twttr.com,
+but this requires users to add the maven.twttr.com repository as a
+resolver for their project. This is normally not a serious problem for
+most users, but historically maven.twttr.com has had a propensity to
+be unreliable and inaccessible from certain locations. Our longterm
+goal is to transition to a current version of Apache libthrift which is
+hosted by the Central Repository, but there is a significant amount of
+work we need to do internally before we can get there.&lt;/p&gt;
+
+&lt;p&gt;However, we have good news: now maven.twttr.com is no longer required! We
+have published a fork of libthrift v0.5.0 to the central repository
+under the &amp;lsquo;com.twitter&amp;rsquo; organization. The class files still reside in
+the &amp;#39;org.apache&amp;rsquo; namespace, so users can still upgrade to newer version
+of libthrift as they wish, but doing so will now require manual exclusion
+rules because the eviction mechanisms used by sbt rely on matching
+organization names:&lt;/p&gt;
+&lt;pre class="highlight scala"&gt;&lt;code&gt;&lt;span class="c1"&gt;// snippet from build.sbt script
+&lt;/span&gt;&lt;span class="n"&gt;libraryDependencies&lt;/span&gt; &lt;span class="o"&gt;++=&lt;/span&gt; &lt;span class="nc"&gt;Seq&lt;/span&gt;&lt;span class="o"&gt;(&lt;/span&gt;
+  &lt;span class="s"&gt;"com.twitter"&lt;/span&gt; &lt;span class="o"&gt;%%&lt;/span&gt; &lt;span class="s"&gt;"finagle-thrift"&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="s"&gt;"6.40.0"&lt;/span&gt; &lt;span class="n"&gt;exclude&lt;/span&gt;&lt;span class="o"&gt;(&lt;/span&gt;&lt;span class="s"&gt;"com.twitter"&lt;/span&gt;&lt;span class="o"&gt;,&lt;/span&gt; &lt;span class="s"&gt;"libthrift"&lt;/span&gt;&lt;span class="o"&gt;),&lt;/span&gt;
+  &lt;span class="s"&gt;"org.apache.thrift"&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="s"&gt;"libthrift"&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="s"&gt;"0.9.3"&lt;/span&gt;
+&lt;span class="o"&gt;)&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;See the &lt;a href="http://www.scala-sbt.org/0.13/docs/Library-Management.html"&gt;sbt documentation on library management&lt;/a&gt;
+for more details.&lt;/p&gt;
+</content>
+  </entry>
+  <entry>
+    <title>Finagle Block Party</title>
+    <link rel="alternate" href="https://finagle.github.io/blog/2016/09/01/block-party/"/>
+    <id>https://finagle.github.io/blog/2016/09/01/block-party/</id>
+    <published>2016-08-31T17:00:00-07:00</published>
+    <updated>2016-11-29T15:26:47-08:00</updated>
+    <author>
+      <name>Article Author</name>
+    </author>
+    <content type="html">&lt;p&gt;💔 &lt;strong&gt;SPOILER ALERT:&lt;/strong&gt; you do not want to go to this party 💔&lt;/p&gt;
+
+&lt;p&gt;Blocking Finagle&amp;rsquo;s event loop via calls to
+&lt;a href="http://twitter.github.io/util/docs/index.html#com.twitter.util.Await$@result[T](awaitable:com.twitter.util.Awaitable[T],timeout:com.twitter.util.Duration):T"&gt;Await.result&lt;/a&gt;
+or
+&lt;a href="http://twitter.github.io/util/docs/index.html#com.twitter.util.Await$@ready[T%3C:com.twitter.util.Awaitable[_]](awaitable:T):T"&gt;Await.ready&lt;/a&gt;
+will cause your application to experience unexpected slowness, a
+decrease in throughput, and potentially deadlocks. Find out if our new
+tools that identify the calls that cause service sadness are right for
+you.&lt;/p&gt;
+
+&lt;p&gt;✮ &lt;em&gt;Why is blocking bad?&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;Finagle uses Netty which is a network library built on an event loop.
+When an event loop thread blocks, that thread can no longer do its
+other asynchronous work. As such, blocking has effects that span
+beyond the line of code that is doing the blocking. Removing blocking
+code should help your service with throughput and latency.&lt;/p&gt;
+
+&lt;p&gt;✮ &lt;em&gt;How do I find out if my service is blocking?&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;Blocking can happen in two ways, explicitly and implicitly. Explicit
+blocking is when code synchronously waits on a Future from an event
+loop thread. In Finagle, this is done by making calls to
+&lt;a href="http://twitter.github.io/util/docs/index.html#com.twitter.util.Await$@result[T](awaitable:com.twitter.util.Awaitable[T],timeout:com.twitter.util.Duration):T"&gt;Await.result&lt;/a&gt;
+or
+&lt;a href="http://twitter.github.io/util/docs/index.html#com.twitter.util.Await$@ready[T%3C:com.twitter.util.Awaitable[_]](awaitable:T):T"&gt;Await.ready&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;If your service is running Finagle 6.37, there is now a gauge exported
+as
+&lt;a href="http://twitter.github.io/finagle/guide/Metrics#scheduler"&gt;scheduler/blocking_ms&lt;/a&gt;
+which can be used to identify how much time is being spent. You can
+verify that your service continues to operate correctly by checking
+the new lint rule added to TwitterServer&amp;rsquo;s
+&lt;a href="http://twitter.github.io/twitter-server/Admin.html#admin-lint"&gt;/admin/lint&lt;/a&gt;
+admin endpoint.&lt;/p&gt;
+
+&lt;p&gt;Implicit blocking happens when your code runs a potentially expensive
+operation, for example making network calls on the event loop thread
+using a synchronous API. Unfortunately, these calls are difficult to
+track down and we do not yet have any tooling to help on this front.&lt;/p&gt;
+
+&lt;p&gt;✮ &lt;em&gt;Bummer, it is blocking. How do I find out what’s blocking?&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;You can do a deploy with an extra system property set that will log
+the stacktraces for a fraction of the blocking calls. Given that the
+code is about to block, the extra overhead of logging the stacktrace
+shouldn&amp;rsquo;t be a significant overhead. However, if your service has a
+large amount of blocking, you may want to limit this fraction to avoid
+filling up your logs. You can set it via
+&lt;code&gt;-Dcom.twitter.concurrent.schedulerSampleBlockingFraction=$fraction&lt;/code&gt;
+where &lt;code&gt;$fraction&lt;/code&gt; must be between &lt;code&gt;0.0&lt;/code&gt; and &lt;code&gt;1.0&lt;/code&gt;, inclusive.&lt;/p&gt;
+
+&lt;p&gt;This will output a log that should point you to the code doing the
+blocking. For example in the stacktrace below, HttpServer.scala would
+be the cause:&lt;/p&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;I 0812 21:39:31.743 THREAD18 TraceId:a2c1d94ae0029777: Scheduler blocked for 5004957 micros via the following stacktrace
+com.twitter.concurrent.LocalScheduler$BlockingHere
+  at com.twitter.concurrent.LocalScheduler$Activation.blocking(Scheduler.scala:216)
+  at com.twitter.concurrent.LocalScheduler.blocking(Scheduler.scala:285)
+  at com.twitter.concurrent.Scheduler$.blocking(Scheduler.scala:115)
+  at com.twitter.util.Await$.result(Awaitable.scala:151)
+  at com.twitter.util.Await$.result(Awaitable.scala:140)
+  at com.twitter.example.HttpServer$$anonfun$4.apply(HttpServer.scala:28)
+  at com.twitter.example.HttpServer$$anonfun$4.apply(HttpServer.scala:24)
+  ...
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;✮ &lt;em&gt;How can I fix the blocking code?&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;We recommend that applications use the &lt;a href="http://twitter.github.io/finagle/guide/Futures.html#sequential-composition"&gt;Future
+combinators&lt;/a&gt;
+such as &lt;code&gt;flatMap&lt;/code&gt;, &lt;code&gt;onSuccess&lt;/code&gt;, &lt;code&gt;transform&lt;/code&gt;, and so on. Sometimes this type
+of change may not be feasible and in those cases you can use a
+&lt;a href="https://github.com/twitter/util/blob/master/util-core/src/main/scala/com/twitter/util/FuturePool.scala"&gt;FuturePool&lt;/a&gt;
+to shift the blocking off of the event loop and onto a thread pool
+that your application controls.&lt;/p&gt;
+
+&lt;p&gt;Please let us know if you have any questions, either by
+getting in touch through &lt;a href="https://twitter.com/finagle"&gt;@finagle&lt;/a&gt;, the
+&lt;a href="https://groups.google.com/forum/#!forum/finaglers"&gt;Finaglers mailing list&lt;/a&gt;,
+or &lt;a href="https://gitter.im/twitter/finagle"&gt;chat&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Thanks for reading and we sincerely hope you don’t RSVP.&lt;/p&gt;
+</content>
+  </entry>
+  <entry>
+    <title>Finagle 6.36 Release Notes</title>
+    <link rel="alternate" href="https://finagle.github.io/blog/2016/07/08/release-notes-6-36/"/>
+    <id>https://finagle.github.io/blog/2016/07/08/release-notes-6-36/</id>
+    <published>2016-07-07T17:00:00-07:00</published>
+    <updated>2016-11-29T15:26:47-08:00</updated>
+    <author>
+      <name>Article Author</name>
+    </author>
+    <content type="html">&lt;p&gt;This is Finagle&amp;rsquo;s first release only for Java 8 and Scala 2.11. Since the previous release, the team
+has been focusing on the Netty 4 migration as well as eliminating some technical debt.&lt;/p&gt;
+
+&lt;h3&gt;Towards Netty 4&lt;/h3&gt;
+
+&lt;p&gt;The team is firing on all cylinders towards Netty 4 support in Finagle. This milestone brings
+&lt;em&gt;beta&lt;/em&gt; (not yet widely used in production) Netty 4 support to Mux/ThriftMux, HTTP 1.1, and
+SOCKS5 (proxy).&lt;/p&gt;
+
+&lt;p&gt;In the meantime, we&amp;rsquo;re part way through migrating the MySQL, Memcached, and Redis protocol.
+Everything is going quite smoothly (except for a couple of
+&lt;a href="https://groups.google.com/forum/#!topic/finaglers/LOCVA0nhcaU"&gt;shortcuts we had to take with Redis&lt;/a&gt;) and we&amp;rsquo;re super positive about having an
+experimental Netty 4 support for those protocols in the next release.&lt;/p&gt;
+
+&lt;h3&gt;Killing Tech Debt&lt;/h3&gt;
+
+&lt;p&gt;There was a tech debt sprint this milestone where we fixed plenty of broken windows. To mention a few: &lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;replace our own version of &lt;code&gt;NoStacktrace&lt;/code&gt; with the Scala version&lt;/li&gt;
+&lt;li&gt;replace our own fork of JSR166e with the JDK8 version&lt;/li&gt;
+&lt;li&gt;clean up duplicated stats: &lt;code&gt;closechans&lt;/code&gt;, &lt;code&gt;closed&lt;/code&gt;, and &lt;code&gt;load&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;finagle-zipkin is now split into two packages: finagle-zipkin (implementation) and
+finagle-zipkin-core (core data types and interfaces)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3&gt;Side Effects are Side Effects&lt;/h3&gt;
+
+&lt;p&gt;There is one runtime change we think it&amp;rsquo;s worth highlighting here. We changed the behaviour of
+&lt;code&gt;.onSuccess&lt;/code&gt;/&lt;code&gt;.onFailure&lt;/code&gt; combinators so that they don&amp;rsquo;t fail a request if the passed function
+throws an exception. Please, consider refactoring if your application has been relying on that
+behaviour.&lt;/p&gt;
+
+&lt;h3&gt;Changelog&lt;/h3&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://github.com/twitter/finagle/releases/tag/finagle-6.36.0"&gt;Finagle 6.36&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://github.com/twitter/util/releases/tag/util-6.35.0"&gt;Util 6.35&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://github.com/twitter/scrooge/releases/tag/scrooge-4.8.0"&gt;Scrooge 4.8&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://github.com/twitter/twitter-server/releases/tag/twitter-server-1.21.0"&gt;TwitterServer 1.21&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Ostrich 9.19 (no changes, only dependency bump)&lt;/li&gt;
+&lt;/ul&gt;
+</content>
+  </entry>
+  <entry>
+    <title>Muxshark: A Wireshark plugin for the Mux protocol</title>
+    <link rel="alternate" href="https://finagle.github.io/blog/2016/05/19/mux-shark/"/>
+    <id>https://finagle.github.io/blog/2016/05/19/mux-shark/</id>
+    <published>2016-05-18T17:00:00-07:00</published>
+    <updated>2016-11-29T15:26:47-08:00</updated>
+    <author>
+      <name>Article Author</name>
+    </author>
+    <content type="html">&lt;p&gt;This &lt;a href="https://www.wireshark.org/"&gt;Wireshark&lt;/a&gt; dissector provides basic decoding of all
+&lt;a href="http://twitter.github.io/finagle/guide/Protocols.html#mux"&gt;Mux&lt;/a&gt; messages including:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Frame length&lt;/li&gt;
+&lt;li&gt;Message type&lt;/li&gt;
+&lt;li&gt;Tag number&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;&lt;sub&gt;Don&amp;rsquo;t know about &lt;a href="http://jvns.ca/blog/2016/03/16/tcpdump-is-amazing/"&gt;Wireshark&lt;/a&gt;
+or &lt;a href="http://twitter.github.io/finagle/guide/Protocols.html#mux"&gt;Mux&lt;/a&gt;?
+Follow the links for introductions.&lt;/sub&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;While this was released as part of Finagle 6.33.0 we never got around to properly announcing it. Now that Shark Week 2016 is about a month away, it felt like a good time to tell people about it.&lt;/p&gt;
+
+&lt;p&gt;The &lt;code&gt;Tdispatch&lt;/code&gt; messages include decoding of our common
+&lt;a href="http://twitter.github.io/finagle/guide/Contexts.html"&gt;Contexts&lt;/a&gt;, destination,
+and &lt;a href="http://twitter.github.io/finagle/guide/Names.html#interpreting-paths-with-delegation-tables"&gt;Dtabs&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;See the
+&lt;a href="https://github.com/twitter/finagle/blob/develop/finagle-mux/src/main/lua/README.md"&gt;README&lt;/a&gt;
+for installation and usage instructions.&lt;/p&gt;
+
+&lt;p align="center"&gt;
+  &lt;img src="/assets/img/muxshark.png" style="margin: 1em 0em;" alt="muxshark screenshot"/&gt;
+&lt;/p&gt;
+
+&lt;p&gt;Please let us know if you have any questions, either by
+getting in touch through &lt;a href="https://twitter.com/finagle"&gt;@finagle&lt;/a&gt;, the
+&lt;a href="https://groups.google.com/forum/#!forum/finaglers"&gt;Finaglers mailing list&lt;/a&gt;,
+or &lt;a href="https://gitter.im/twitter/finagle"&gt;chat&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Happy TCP-capturing!&lt;/p&gt;
+</content>
+  </entry>
+  <entry>
+    <title>Final Scala 2.10 and Java 7 releases</title>
+    <link rel="alternate" href="https://finagle.github.io/blog/2016/04/20/scala-210-and-java7/"/>
+    <id>https://finagle.github.io/blog/2016/04/20/scala-210-and-java7/</id>
+    <published>2016-04-19T17:00:00-07:00</published>
+    <updated>2016-11-29T15:26:47-08:00</updated>
+    <author>
+      <name>Article Author</name>
+    </author>
+    <content type="html">&lt;p&gt;The upcoming releases of our family of projects will be the final release for
+Scala 2.10 and Java 7. These should be:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Finagle 6.35.0&lt;/li&gt;
+&lt;li&gt;Finatra 2.1.6&lt;/li&gt;
+&lt;li&gt;Util 6.34.0&lt;/li&gt;
+&lt;li&gt;Scrooge 4.7.0&lt;/li&gt;
+&lt;li&gt;TwitterServer 1.20.0&lt;/li&gt;
+&lt;li&gt;Ostrich 9.18.0&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Java 7 reached its &lt;a href="http://www.oracle.com/technetwork/java/eol-135779.html"&gt;end-of-life&lt;/a&gt;
+in April 2015 and we would like to begin using the Java 8 libraries as well as
+remove some Java 7 specific workarounds. Once Scala 2.12 is released, we plan
+to add support for cross-compiling Scala 2.11 and 2.12.&lt;/p&gt;
+
+&lt;p&gt;Note that the scrooge-sbt-plugin will continue to be published for only
+Scala 2.10 due to sbt plugin requirements.&lt;/p&gt;
+
+&lt;p&gt;If important patch releases become necessary we will try to accomodate these
+needs.&lt;/p&gt;
+
+&lt;p&gt;Please let us know if you have any questions, either by
+getting in touch through &lt;a href="https://twitter.com/finagle"&gt;@finagle&lt;/a&gt;, the
+&lt;a href="https://groups.google.com/forum/#!forum/finaglers"&gt;Finaglers mailing list&lt;/a&gt;,
+or &lt;a href="https://gitter.im/twitter/finagle"&gt;chat&lt;/a&gt;. For Finatra get in touch through
+&lt;a href="https://twitter.com/finatra"&gt;@finatra&lt;/a&gt;, the
+&lt;a href="https://groups.google.com/forum/#!forum/finatra-users"&gt;Finatra mailing list&lt;/a&gt;,
+or &lt;a href="https://gitter.im/twitter/finatra"&gt;chat&lt;/a&gt;.&lt;/p&gt;
+</content>
+  </entry>
+  <entry>
+    <title>Finagle 6.34 Release Notes</title>
+    <link rel="alternate" href="https://finagle.github.io/blog/2016/03/11/release-notes-6-34/"/>
+    <id>https://finagle.github.io/blog/2016/03/11/release-notes-6-34/</id>
+    <published>2016-03-10T16:00:00-08:00</published>
+    <updated>2016-11-29T15:26:47-08:00</updated>
+    <author>
+      <name>Article Author</name>
+    </author>
+    <content type="html">&lt;p&gt;This release we&amp;rsquo;ve been focusing on improving both overall stability of Finagle components and
+debugging features. We also reverted a patch that cased &lt;a href="https://groups.google.com/forum/#!topic/finaglers/tJUtxoaDGx8"&gt;duplicate tag error&lt;/a&gt; that looks as
+follows.&lt;/p&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;com.twitter.finagle.mux.ServerError: Duplicate tag 6
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;With that said, we highly recommend upgrading from 6.33 to 6.34.&lt;/p&gt;
+
+&lt;h3&gt;Highlights&lt;/h3&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Finagle now includes downstream/upstream addresses in its exceptions (see &lt;a href="https://github.com/twitter/finagle/commit/6716980a5f313cdc4488c578ea3a642cdfb9d4fa"&gt;dfb9d4fa&lt;/a&gt;)&lt;/li&gt;
+&lt;li&gt;&lt;a href="http://twitter.github.io/finagle/guide/Servers.html#response-classification"&gt;Response classifiers&lt;/a&gt; are now enabled for HTTP servers (see &lt;a href="https://github.com/twitter/finagle/commit/28c03353024a2372513657030ba1c940c6f1b9b8"&gt;c6f1b9b8&lt;/a&gt;)&lt;/li&gt;
+&lt;li&gt;Two new histograms &lt;code&gt;request_payload_bytes&lt;/code&gt; and &lt;code&gt;response_payload_bytes&lt;/code&gt; are now reported for
+HTTP, Mux, Thrift, and ThriftMux protocols (see &lt;a href="https://github.com/twitter/finagle/commit/35e466ff35a1630c17aba6ee1fbd593aa0d9b697"&gt;a0d9b697&lt;/a&gt;)&lt;/li&gt;
+&lt;li&gt;A number of deprecated methods were removed from the Finagle API (see &lt;a href="https://github.com/twitter/finagle/commit/6b230c7032efe4ac1f07118da19bb1d8eeb54869"&gt;eeb54869&lt;/a&gt;)&lt;/li&gt;
+&lt;li&gt;Stack overflow bug was fixed in &lt;code&gt;AsyncStream.concat&lt;/code&gt; (see &lt;a href="https://github.com/twitter/util/commit/dedad7027db8ea88c513b4c428b0dcdc5a039780"&gt;5a039780&lt;/a&gt;)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3&gt;Further Plans&lt;/h3&gt;
+
+&lt;p&gt;We&amp;rsquo;re actively working on migrating Finagle to Netty 4 (&lt;code&gt;finagle-core&lt;/code&gt; is mostly done,
+&lt;code&gt;finagle-http&lt;/code&gt; is our next target) and as part of this work we&amp;rsquo;re planing to completely
+replace &lt;a href="https://github.com/twitter/finagle/blob/develop/finagle-core/src/main/scala/com/twitter/finagle/Codec.scala"&gt;codecs&lt;/a&gt;, which are pretty tied to Netty 3, with &lt;a href="https://github.com/twitter/finagle/blob/develop/finagle-core/src/main/scala/com/twitter/finagle/Stack.scala"&gt;stacks&lt;/a&gt;. While this is
+a pretty wide internal change, it should not affect Finagle users.&lt;/p&gt;
+
+&lt;h3&gt;Changelog&lt;/h3&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://github.com/twitter/finagle/releases/tag/finagle-6.34.0"&gt;Finagle 6.34&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://github.com/twitter/util/releases/tag/util-6.33.0"&gt;Util 6.33&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://github.com/twitter/scrooge/releases/tag/scrooge-4.6.0"&gt;Scrooge 4.6&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://github.com/twitter/twitter-server/releases/tag/twitter-server-1.19.0"&gt;TwitterServer 1.19&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://github.com/twitter/ostrich/releases/tag/ostrich-9.17.0"&gt;Ostrich 9.17&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3&gt;Contributors&lt;/h3&gt;
+
+&lt;p&gt;We deeply thank our awesome contributors who helped to make this release happen. According to
+&lt;code&gt;git shortlog -sn --no-merges finagle-6.33.0..finagle-6.34.0&lt;/code&gt;, 18 people contributed to this release:
+Kevin Oliver, Daniel Schobel, Eugene Ma, Vladimir Kostyukov, Ruben Oanta, Christopher Coco, Jillian
+Crossley, Eitan Adler, Ryan Greenberg, Stu Hood, Antoine Tollenaere, Yoshimasa Niwa, Bing Wei, Edward
+Samson, Liam Stewart, Lucas Langer, Miguel Cervera, Moses Nakamura, Peter Schuller.&lt;/p&gt;
+</content>
+  </entry>
+</feed>
